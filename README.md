@@ -28,3 +28,10 @@ Extra:
 3. Record Workflow run times to create detailed run history reports.
 4. Some simple UI for demo.
 5. EFS file watcher.
+6. use go text/template in workflows before submit to make them more flexible.  Available variables will be related to the scheduler
+        - Job name
+        - Execution run of the day
+        - Original scheduled time
+        - today
+        - Today-1
+        - workday - 1  (if today is Monday it will return Friday)

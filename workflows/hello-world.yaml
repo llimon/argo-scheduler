@@ -4,9 +4,14 @@ metadata:
   generateName: hello-world-
 spec:
   entrypoint: whalesay
+  arguments:
+    parameters:
+    - name: hello
+    - name: bye
+    - name: what
   templates:
   - name: whalesay
     container:
-      image: docker/whalesay:latest
-      command: [cowsay]
-      args: ["Hola Mundo"]
+      image: alpine:latest
+      command: ["/bin/echo"]
+      args: ["{{workflow.parameters.hello}}"]

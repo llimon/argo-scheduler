@@ -92,7 +92,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		// create the workflow client
 		wfClient := wfclientset.NewForConfigOrDie(config).ArgoprojV1alpha1().Workflows(namespace)
 
-		body, err := ioutil.ReadFile("hello-world.yaml")
+		body, err := ioutil.ReadFile("workflows/hello-world.yaml")
 		fmt.Printf(" reading file %v", &body)
 		checkErr(err)
 
@@ -105,8 +105,8 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		for _, paramStr := range wfParameters {
 			parts := strings.SplitN(paramStr, "=", 2)
 			if len(parts) != 2 {
-                // Ignore invalid parameters
-				continue 
+				// Ignore invalid parameters
+				continue
 			}
 			param := wfv1.Parameter{
 				Name:  parts[0],

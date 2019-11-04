@@ -4,8 +4,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+    //"fmt"
 
-	log "github.com/Sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -14,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+    //"github.com/robfig/cron"
 )
 
 // retrieve the Kubernetes cluster client from outside of the cluster
@@ -39,6 +41,10 @@ func getKubernetesClient() kubernetes.Interface {
 
 // main code path
 func main() {
+
+    //cj := cron.New()
+    //cj.AddFunc("1 * * * *", func() { fmt.Println("Every hour on the minute") })
+
 	// get the Kubernetes client for connectivity
 	client := getKubernetesClient()
 

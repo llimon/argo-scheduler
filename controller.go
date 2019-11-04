@@ -2,14 +2,26 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
+	"os/user"
+	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
+	"github.com/ghodss/yaml"
+	"github.com/robfig/cron"
+	log "github.com/sirupsen/logrus"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/workqueue"
+
+	"github.com/argoproj/argo/errors"
+	wfv1 "github.com/argoproj/argo/pkg/apis/workflow/v1alpha1"
+	wfclientset "github.com/argoproj/argo/pkg/client/clientset/versioned"
 )
 
 // Controller struct defines how a controller should encapsulate
@@ -23,6 +35,37 @@ type Controller struct {
 	handler   Handler
 }
 
+var yamlSeparator = regexp.MustCompile("\\n---")
+
+func checkErr(err error) {
+	if err != nil {
+		panic(err.Error())
+	}
+}
+
+// splitYAMLFile is a helper to split a body into multiple workflow objects
+func splitYAMLFile(body []byte) ([]wfv1.Workflow, error) {
+	manifestsStrings := yamlSeparator.Split(string(body), -1)
+	manifests := make([]wfv1.Workflow, 0)
+	for _, manifestStr := range manifestsStrings {
+		if strings.TrimSpace(manifestStr) == "" {
+			continue
+		}
+		var wf wfv1.Workflow
+		err := yaml.Unmarshal([]byte(manifestStr), &wf)
+		//if wf.Kind != "" && wf.Kind != workflow.Kind {
+		//	// If we get here, it was a k8s manifest which was not of type 'Workflow'
+		//	// We ignore these since we only care about validating Workflow manifests.
+		//	continue
+		//}
+		if err != nil {
+			return nil, errors.New(errors.CodeBadRequest, err.Error())
+		}
+		manifests = append(manifests, wf)
+	}
+	return manifests, nil
+}
+
 // Run is the main path of execution for the controller loop
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	// handle a panic with logging and exiting
@@ -32,6 +75,64 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	defer c.queue.ShutDown()
 
 	c.logger.Info("Controller.Run: initiating")
+
+	cj := cron.New()
+	cj.AddFunc("*/1 * * * *", func() {
+		// get current user to determine home directory
+		usr, err := user.Current()
+		checkErr(err)
+
+		kubeconfig := filepath.Join(usr.HomeDir, ".kube", "config")
+		// use the current context in kubeconfig
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		checkErr(err)
+
+		namespace := "default"
+
+		// create the workflow client
+		wfClient := wfclientset.NewForConfigOrDie(config).ArgoprojV1alpha1().Workflows(namespace)
+
+		body, err := ioutil.ReadFile("hello-world.yaml")
+		fmt.Printf(" reading file %v", &body)
+		checkErr(err)
+
+		workFlows, err := splitYAMLFile(body)
+		checkErr(err)
+		// submit the hello world workflow
+		wfParameters := []string{"hello=one", "bye=two", "what=is"}
+		newParams := make([]wfv1.Parameter, 0)
+		passedParams := make(map[string]bool)
+		for _, paramStr := range wfParameters {
+			parts := strings.SplitN(paramStr, "=", 2)
+			if len(parts) != 2 {
+                // Ignore invalid parameters
+				continue 
+			}
+			param := wfv1.Parameter{
+				Name:  parts[0],
+				Value: &parts[1],
+			}
+			newParams = append(newParams, param)
+			passedParams[param.Name] = true
+		}
+		for _, param := range workFlows[0].Spec.Arguments.Parameters {
+			if _, ok := passedParams[param.Name]; ok {
+				// this parameter was overridden via command line
+				continue
+			}
+			newParams = append(newParams, param)
+		}
+
+		workFlows[0].Spec.Arguments.Parameters = newParams
+		createdWf, err := wfClient.Create(&workFlows[0])
+
+		checkErr(err)
+		fmt.Printf("Workflow %s submitted\n", createdWf.Name)
+
+		c.logger.Info("Every hour on the minute")
+	})
+	c.logger.Info("Start Cron scheduler")
+	cj.Start()
 
 	// run the informer to start listing and watching resources
 	go c.informer.Run(stopCh)
